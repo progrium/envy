@@ -1,0 +1,85 @@
+#!/bin/bash
+
+IFS="+" read USER ENV <<< "${USER:?}"
+ENV="${ENV:-$USER}"
+HOST_DATA="${HOST_DATA:?}"
+
+data-init() {
+  mkdir -p /data/users
+  cp /bin/envcmd /data/.envcmd
+}
+
+user-init() {
+  if [[ ! -d "/data/users/$USER" ]]; then
+    mkdir -p "/data/users/$USER"
+    mkdir -p "/data/users/$USER/envs"
+    mkdir -p "/data/users/$USER/home"
+    cp -R /tmp/data/root "/data/users/$USER/root"
+  fi
+}
+
+env-init() {
+  if [[ ! -d "/data/users/$USERS/envs/$ENV" ]]; then
+    cp -R /tmp/data/env "/data/users/$USER/envs/$ENV"
+  fi
+  cd "/data/users/$USER/envs/$ENV"
+  if ! docker history "$USER/$ENV" &> /dev/null; then
+    echo "Building environment ... "
+    docker build -t "$USER/$ENV" . &> /dev/null
+  fi
+}
+
+env-session() {
+  local session="$USER.$(date +%s)"
+  local status="128"
+  set +e
+  while [[ "$status" == "128" ]]; do
+    if [[ -f "/data/users/$USER/root/$session" ]]; then
+      read cmd args <<< "$(cat /data/users/$USER/root/$session)"
+      case "$cmd" in
+      *rebuild)
+        docker build -t "$USER/$ENV" .
+        ;;
+      *switch)
+        echo "Switching to $args ... "
+        ENV="$args"
+        env-init
+        ;;
+      *commit)
+        echo "Committing to $args ... "
+        docker commit "$session" "$USER/$ENV" > /dev/null
+        ;;
+      esac
+      rm -f "/data/users/$USER/root/$session"
+    fi
+    docker rm -f "$session" &> /dev/null
+    docker run -it -h "$ENV" \
+      --name "$session" \
+      --env "ENVY_SESSION=$session" \
+      --env "ENVY_RANDOM=$RANDOM" \
+      --volume "$HOST_DATA/.envcmd:/sbin/reload" \
+      --volume "$HOST_DATA/.envcmd:/sbin/rebuild" \
+      --volume "$HOST_DATA/.envcmd:/sbin/switch" \
+      --volume "$HOST_DATA/.envcmd:/sbin/commit" \
+      --volume "$HOST_DATA/users/$USER/envs/$ENV:/env" \
+      --volume "$HOST_DATA/users/$USER/root:/root" \
+      --volume "$HOST_DATA/users/$USER/home:/home/$USER" \
+      --volume "$HOST_DATA:/admin" \
+      "$USER/$ENV"
+    status=$?
+  done
+  docker rm -f "$session" > /dev/null
+  if [[ "$status" != "128" ]]; then
+    exit "$status"
+  fi
+}
+
+main() {
+  set -e
+  data-init
+  user-init
+  env-init
+  env-session
+}
+
+main "$@"

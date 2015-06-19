@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Terminal</title>
+  <script src="./hterm.js"></script>
+  <style>
+    html,
+    body {
+      height: 100%;
+      width: 100%;
+      margin: 0px;
+    }
+    #terminal {
+      display: block;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="terminal"></div>
+  <script>
+var term;
+var ws;
+
+var req = new XMLHttpRequest();
+req.open('GET', document.location, false);
+req.send(null);
+if (req.getResponseHeader("Hterm-Title") != null) {
+  document.title = req.getResponseHeader("Hterm-Title")
+}
+
+function Term(argv) {
+  this.argv_ = argv;
+  this.io = null;
+  this.pid_ = -1;
+}
+
+Term.prototype.run = function() {
+  this.io = this.argv_.io.push();
+  this.io.onVTKeystroke = this.sendString_.bind(this);
+  this.io.sendString = this.sendString_.bind(this);
+  this.io.onTerminalResize = this.onTerminalResize.bind(this);
+}
+
+Term.prototype.sendString_ = function(str) {
+  ws.send(JSON.stringify({data: str}));
+};
+
+Term.prototype.onTerminalResize = function(width, height) {
+  if (ws) ws.send(JSON.stringify({
+    width: width,
+    height: height
+  }));
+};
+
+ws = new WebSocket(((window.location.protocol === 'https:')?'wss://':'ws://')
+            + window.location.host + window.location.pathname + '/hterm');
+ws.onopen = function() {
+  lib.init(function() {
+      term = new hterm.Terminal();
+      window.term = term;
+      term.decorate(document.getElementById('terminal'));
+      term.setCursorPosition(0, 0);
+      term.setCursorVisible(true);
+      term.prefs_.set('ctrl-c-copy', true);
+      term.prefs_.set('use-default-window-copy', true);
+      term.runCommandClass(Term);
+      ws.send(JSON.stringify({
+          args: document.location.hash.substr(1),
+          width: term.screenSize.width,
+          height: term.screenSize.height
+      }));
+  });
+}
+ws.onmessage = function(msg) {
+  if (!msg || !msg.data) return;
+  if (term) term.io.writeUTF16(msg.data);
+}
+ws.onerror = function(e) {
+  console.log("WebSocket connection error");
+}
+ws.onclose = function() {
+  console.log("WebSocket connection closed");
+}
+  </script>
+</body>
+</html>

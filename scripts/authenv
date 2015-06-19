@@ -1,0 +1,5 @@
+#!/bin/bash
+set -eo pipefail
+IFS="+" read user env <<< "$1"
+curl -s "https://github.com/$user.keys" \
+  | grep "$2" > /dev/null 2>&1

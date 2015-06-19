@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "$0 $@" > "/root/$ENVY_SESSION"
+exit 128

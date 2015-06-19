@@ -22,10 +22,24 @@ env-init() {
   if [[ ! -d "/data/users/$USERS/envs/$ENV" ]]; then
     cp -R /tmp/data/env "/data/users/$USER/envs/$ENV"
   fi
+  env-docker
   cd "/data/users/$USER/envs/$ENV"
   if ! docker history "$USER/$ENV" &> /dev/null; then
     echo "Building environment ... "
     docker build -t "$USER/$ENV" . &> /dev/null
+  fi
+}
+
+env-docker() {
+  mkdir -p "/data/users/$USER/envs/$ENV/run"
+  if ! docker diff "$USER.$ENV" &> /dev/null; then
+    docker run -d --privileged \
+      --name "$USER.$ENV" \
+      --hostname "$ENV" \
+      --env PORT=2375 \
+      --restart always \
+      --volume "$HOST_DATA/users/$USER/envs/$ENV/run:/var/run" \
+      jpetazzo/dind > /dev/null
   fi
 }
 
@@ -53,25 +67,36 @@ env-session() {
       rm -f "/data/users/$USER/root/$session"
     fi
     docker rm -f "$session" &> /dev/null
-    docker run -it -h "$ENV" \
+    docker run -it \
       --name "$session" \
+      --net "container:$USER.$ENV" \
+      --env "HOSTNAME=$ENV" \
       --env "ENVY_SESSION=$session" \
       --env "ENVY_RANDOM=$RANDOM" \
-      --volume "$HOST_DATA/.envcmd:/sbin/reload" \
-      --volume "$HOST_DATA/.envcmd:/sbin/rebuild" \
-      --volume "$HOST_DATA/.envcmd:/sbin/switch" \
-      --volume "$HOST_DATA/.envcmd:/sbin/commit" \
+      --env "DOCKER_HOST=unix:///env/run/docker.sock" \
+      --volume "$HOST_DATA/.envcmd:/sbin/reload:ro" \
+      --volume "$HOST_DATA/.envcmd:/sbin/rebuild:ro" \
+      --volume "$HOST_DATA/.envcmd:/sbin/switch:ro" \
+      --volume "$HOST_DATA/.envcmd:/sbin/commit:ro" \
       --volume "$HOST_DATA/users/$USER/envs/$ENV:/env" \
       --volume "$HOST_DATA/users/$USER/root:/root" \
       --volume "$HOST_DATA/users/$USER/home:/home/$USER" \
       --volume "$HOST_DATA:/admin" \
-      "$USER/$ENV"
+      "$USER/$ENV" $(docker-cmd)
     status=$?
   done
   docker rm -f "$session" > /dev/null
-  if [[ "$status" != "128" ]]; then
-    exit "$status"
+  [[ "$status" == "128" ]] || exit "$status"
+}
+
+docker-cmd() {
+  if [[ "$(docker inspect -f {{.Config.Cmd}} $USER/$ENV)" != "<no value>" ]]; then
+    return
   fi
+  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $USER/$ENV)" != "<no value>" ]]; then
+    return
+  fi
+  echo "/bin/sh"
 }
 
 main() {

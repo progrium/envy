@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -26,6 +27,13 @@ func main() {
 			return
 		}
 		pathUser := parts[2]
+		var pathEnv, sshUser string
+		if len(parts) > 3 && parts[3] != "hterm" {
+			pathEnv = parts[3]
+			sshUser = pathUser + "+" + pathEnv
+		} else {
+			sshUser = pathUser
+		}
 		// passthrough auth for hterm. use cookie to do this right
 		if !strings.Contains(r.URL.Path, "hterm") {
 			user, passwd, ok := r.BasicAuth()
@@ -37,7 +45,10 @@ func main() {
 		}
 		w.Header().Set("Hterm-Title", "Envy Term")
 		hterm.Handle(w, r, func(args string) *hterm.Pty {
-			pty, err := hterm.NewPty(exec.Command("/bin/enterenv", parts[2]))
+			cmd := exec.Command("/bin/enterenv", parts[2])
+			cmd.Env = os.Environ()
+			cmd.Env = append(cmd.Env, fmt.Sprintf("USER=%s", sshUser))
+			pty, err := hterm.NewPty(cmd)
 			if err != nil {
 				log.Fatal(err)
 			}

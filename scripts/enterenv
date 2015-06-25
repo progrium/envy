@@ -19,7 +19,7 @@ user-init() {
 }
 
 env-init() {
-  if [[ ! -d "/data/users/$USERS/envs/$ENV" ]]; then
+  if [[ ! -d "/data/users/$USER/envs/$ENV" ]]; then
     cp -R /tmp/data/env "/data/users/$USER/envs/$ENV"
   fi
   env-docker

@@ -5,8 +5,8 @@ ENV="${ENV:-$USER}"
 IFS="/" read SUSER SENV <<< "${ENV:?}"
 HOST_DATA="${HOST_DATA:?}"
 
-# AUSER = Affective User
-# AENV = Affective Environment
+# AUSER = Actual User
+# AENV = Actual Environment
 AUSER=$USER
 AENV=$ENV
 SHARED=false
@@ -27,11 +27,18 @@ user-init() {
 }
 
 shared-init() {
-  if [ $ENV != $SUSER ] && [ $SUSER != $USER ]; then
-    SHARED=true
-    AUSER=$SUSER
-    AENV=$SENV
+  if [ -d "/data/users/$AUSER/envs/$AENV" ]; then
+    # user already has the env, do not try and setup shared env
+    return
+  fi
 
+  if [ -d "/data/users/$AENV" ]; then
+    # environment is a user, try and share!
+    SHARED=true
+    AUSER=$AENV
+  fi
+
+  if [ $SHARED == true ]; then
     if [[ ! -d "/data/users/$AUSER/envs/$AENV" ]]; then
       echo "Shared environment does not exist, exiting ..."
       exit 1

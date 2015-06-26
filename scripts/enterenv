@@ -8,7 +8,11 @@ ENV="${ENV:-$USER}"
 HOST_DATA="${HOST_DATA:?}"
 
 # This is where users environments will be stored
-USER_ROOT="${USER_ROOT:-/data/users/$USER}"
+USER_ROOT="${USER_ROOT:-"/data/users/$USER"}"
+
+# Not really needed to be defined as a variable but allows for injecting its value
+# from outside (might be useful for testing purposes)
+GH_ENVY_HOME=${GH_ENVY_HOME:-"https://github.com/$USER/envy.home.git"}
 
 # The obvious ones
 ENV_IMAGE="$USER/$ENV"
@@ -24,8 +28,8 @@ user-init() {
   if [[ ! -d "$USER_ROOT" ]]; then
     mkdir -p "$USER_ROOT"
     mkdir -p "$USER_ROOT/envs"
-    if $(wget --spider https://github.com/$USER/envy.home &>/dev/null); then
-      git clone https://github.com/$USER/envy.home.git "$USER_ROOT/home"
+    if $(wget --spider $GH_ENVY_HOME &>/dev/null); then
+      git clone $GH_ENVY_HOME "$USER_ROOT/home"
     else
       mkdir -p "$USER_ROOT/home"
     fi

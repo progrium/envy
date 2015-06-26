@@ -12,6 +12,7 @@ USER_ROOT="${USER_ROOT:-/data/users/$USER}"
 
 # The obvious ones
 ENV_IMAGE="$USER/$ENV"
+ENV_ROOT="$USER_ROOT/envs/$ENV"
 DIND_CONTAINER_NAME="$USER.$ENV"
 
 data-init() {
@@ -29,11 +30,11 @@ user-init() {
 }
 
 env-init() {
-  if [[ ! -d "$USER_ROOT/envs/$ENV" ]]; then
-    cp -R /tmp/data/env "$USER_ROOT/envs/$ENV"
+  if [[ ! -d "$ENV_ROOT" ]]; then
+    cp -R /tmp/data/env "$ENV_ROOT"
   fi
   env-docker
-  cd "$USER_ROOT/envs/$ENV"
+  cd "$ENV_ROOT"
   if ! docker history $ENV_IMAGE &> /dev/null; then
     echo "Building environment ... "
     docker build -t $ENV_IMAGE . &> /dev/null
@@ -41,7 +42,7 @@ env-init() {
 }
 
 env-docker() {
-  mkdir -p "$USER_ROOT/envs/$ENV/run"
+  mkdir -p "$ENV_ROOT/run"
   if ! docker diff $DIND_CONTAINER_NAME &> /dev/null; then
     docker run -d --privileged \
       --name $DIND_CONTAINER_NAME \

@@ -4,26 +4,29 @@ IFS="+" read USER ENV <<< "${USER:?}"
 ENV="${ENV:-$USER}"
 HOST_DATA="${HOST_DATA:?}"
 
+# This is where users environments will be stored
+USER_ROOT="${USER_ROOT:-/data/users/$USER}"
+
 data-init() {
   mkdir -p /data/users
   cp /bin/envcmd /data/.envcmd
 }
 
 user-init() {
-  if [[ ! -d "/data/users/$USER" ]]; then
-    mkdir -p "/data/users/$USER"
-    mkdir -p "/data/users/$USER/envs"
-    mkdir -p "/data/users/$USER/home"
-    cp -R /tmp/data/root "/data/users/$USER/root"
+  if [[ ! -d "$USER_ROOT" ]]; then
+    mkdir -p "$USER_ROOT"
+    mkdir -p "$USER_ROOT/envs"
+    mkdir -p "$USER_ROOT/home"
+    cp -R /tmp/data/root "$USER_ROOT/root"
   fi
 }
 
 env-init() {
-  if [[ ! -d "/data/users/$USER/envs/$ENV" ]]; then
-    cp -R /tmp/data/env "/data/users/$USER/envs/$ENV"
+  if [[ ! -d "$USER_ROOT/envs/$ENV" ]]; then
+    cp -R /tmp/data/env "$USER_ROOT/envs/$ENV"
   fi
   env-docker
-  cd "/data/users/$USER/envs/$ENV"
+  cd "$USER_ROOT/envs/$ENV"
   if ! docker history "$USER/$ENV" &> /dev/null; then
     echo "Building environment ... "
     docker build -t "$USER/$ENV" . &> /dev/null
@@ -31,7 +34,7 @@ env-init() {
 }
 
 env-docker() {
-  mkdir -p "/data/users/$USER/envs/$ENV/run"
+  mkdir -p "$USER_ROOT/envs/$ENV/run"
   if ! docker diff "$USER.$ENV" &> /dev/null; then
     docker run -d --privileged \
       --name "$USER.$ENV" \
@@ -48,8 +51,8 @@ env-session() {
   local status="128"
   set +e
   while [[ "$status" == "128" ]]; do
-    if [[ -f "/data/users/$USER/root/$session" ]]; then
-      read cmd args <<< "$(cat /data/users/$USER/root/$session)"
+    if [[ -f "$USER_ROOT/root/$session" ]]; then
+      read cmd args <<< "$(cat $USER_ROOT/root/$session)"
       case "$cmd" in
       *rebuild)
         docker build -t "$USER/$ENV" .
@@ -64,7 +67,7 @@ env-session() {
         docker commit "$session" "$USER/$ENV" > /dev/null
         ;;
       esac
-      rm -f "/data/users/$USER/root/$session"
+      rm -f "$USER_ROOT/root/$session"
     fi
     docker rm -f "$session" &> /dev/null
     docker run -it \

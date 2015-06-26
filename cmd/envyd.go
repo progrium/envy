@@ -29,7 +29,9 @@ func main() {
 		pathUser := parts[2]
 		var pathEnv, sshUser string
 		if len(parts) > 3 && parts[3] != "hterm" {
-			pathEnv = parts[3]
+			if parts[3] != "-" {
+				pathEnv = parts[3]
+			}
 			sshUser = pathUser + "+" + pathEnv
 		} else {
 			sshUser = pathUser

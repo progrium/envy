@@ -2,6 +2,9 @@
 
 IFS="+" read USER ENV <<< "${USER:?}"
 ENV="${ENV:-$USER}"
+
+# The path relative to the host Docker machine where data will be persisted, used
+# for adjusting paths when nesting containers
 HOST_DATA="${HOST_DATA:?}"
 
 # This is where users environments will be stored

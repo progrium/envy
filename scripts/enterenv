@@ -10,7 +10,9 @@ HOST_DATA="${HOST_DATA:?}"
 # This is where users environments will be stored
 USER_ROOT="${USER_ROOT:-/data/users/$USER}"
 
+# The obvious ones
 ENV_IMAGE="$USER/$ENV"
+DIND_CONTAINER_NAME="$USER.$ENV"
 
 data-init() {
   mkdir -p $(readlink -f "${USER_ROOT}/..")
@@ -40,9 +42,9 @@ env-init() {
 
 env-docker() {
   mkdir -p "$USER_ROOT/envs/$ENV/run"
-  if ! docker diff "$USER.$ENV" &> /dev/null; then
+  if ! docker diff $DIND_CONTAINER_NAME &> /dev/null; then
     docker run -d --privileged \
-      --name "$USER.$ENV" \
+      --name $DIND_CONTAINER_NAME \
       --hostname "$ENV" \
       --env PORT=2375 \
       --restart always \
@@ -77,7 +79,7 @@ env-session() {
     docker rm -f "$session" &> /dev/null
     docker run -it \
       --name "$session" \
-      --net "container:$USER.$ENV" \
+      --net "container:$DIND_CONTAINER_NAME" \
       --env "HOSTNAME=$ENV" \
       --env "ENVY_SESSION=$session" \
       --env "ENVY_RANDOM=$RANDOM" \

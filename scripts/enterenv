@@ -2,7 +2,15 @@
 
 IFS="+" read USER ENV <<< "${USER:?}"
 ENV="${ENV:-$USER}"
+IFS="/" read SUSER SENV <<< "${ENV:?}"
 HOST_DATA="${HOST_DATA:?}"
+
+# AUSER = Affective User
+# AENV = Affective Environment
+AUSER=$USER
+AENV=$ENV
+SHARED=false
+
 
 data-init() {
   mkdir -p /data/users
@@ -10,49 +18,90 @@ data-init() {
 }
 
 user-init() {
-  if [[ ! -d "/data/users/$USER" ]]; then
-    mkdir -p "/data/users/$USER"
-    mkdir -p "/data/users/$USER/envs"
-    mkdir -p "/data/users/$USER/home"
-    cp -R /tmp/data/root "/data/users/$USER/root"
+  if [[ ! -d "/data/users/$AUSER" ]]; then
+    mkdir -p "/data/users/$AUSER"
+    mkdir -p "/data/users/$AUSER/envs"
+    mkdir -p "/data/users/$AUSER/home"
+    cp -R /tmp/data/root "/data/users/$AUSER/root"
+  fi
+}
+
+shared-init() {
+  if [ $ENV != $SUSER ] && [ $SUSER != $USER ]; then
+    SHARED=true
+    AUSER=$SUSER
+    AENV=$SENV
+
+    if [[ ! -d "/data/users/$AUSER/envs/$AENV" ]]; then
+      echo "Shared environment does not exist, exiting ..."
+      exit 1
+    fi
+    
+    if [ ! -f "/data/users/$AUSER/root/.users" ]; then
+      echo "Permission denied"
+      exit 2
+    fi
+
+    if ! grep -q "^$USER$" "/data/users/$AUSER/root/.users"
+    then
+      echo "Permission denied"
+      exit 3
+    fi
   fi
 }
 
 env-init() {
-  if [[ ! -d "/data/users/$USER/envs/$ENV" ]]; then
-    cp -R /tmp/data/env "/data/users/$USER/envs/$ENV"
+  if [[ ! -d "/data/users/$AUSER/envs/$AENV" ]]; then
+    cp -R /tmp/data/env "/data/users/$AUSER/envs/$AENV"
   fi
   env-docker
-  cd "/data/users/$USER/envs/$ENV"
-  if ! docker history "$USER/$ENV" &> /dev/null; then
+  cd "/data/users/$AUSER/envs/$AENV"
+  if ! docker history "$AUSER/$AENV" &> /dev/null; then
     echo "Building environment ... "
-    docker build -t "$USER/$ENV" . &> /dev/null
+    docker build -t "$AUSER/$AENV" . &> /dev/null
   fi
 }
 
 env-docker() {
-  mkdir -p "/data/users/$USER/envs/$ENV/run"
-  if ! docker diff "$USER.$ENV" &> /dev/null; then
+  local docker_name="$AUSER.$AENV"
+  local docker_host="$AENV"
+  if [[ $SHARED == true ]]; then
+    docker_name="$USER.$AUSER.$AENV"
+    docker_host="$AUSER.$AENV"
+  fi
+    
+  mkdir -p "/data/users/$AUSER/envs/$AENV/run"
+  if ! docker diff "$docker_name" &> /dev/null; then
     docker run -d --privileged \
-      --name "$USER.$ENV" \
-      --hostname "$ENV" \
+      --name "$docker_name" \
+      --hostname "$docker_host" \
       --env PORT=2375 \
       --restart always \
-      --volume "$HOST_DATA/users/$USER/envs/$ENV/run:/var/run" \
+      --volume "$HOST_DATA/users/$AUSER/envs/$AENV/run:/var/run" \
       jpetazzo/dind > /dev/null
   fi
 }
 
 env-session() {
-  local session="$USER.$(date +%s)"
+  local docker_name="${AUSER}.${AENV}"
+  local docker_host="${AENV}"
+  local docker_session="${USER}/${ENV}"
+  if [[ $SHARED == true ]]; then
+    docker_name="${USER}.${AUSER}.${AENV}"
+    docker_host="${AUSER}_${AENV}"
+    docker_session="${AUSER}/${AENV}"
+  fi
+
+  local session="$AUSER.$(date +%s)"
   local status="128"
+
   set +e
   while [[ "$status" == "128" ]]; do
-    if [[ -f "/data/users/$USER/root/$session" ]]; then
-      read cmd args <<< "$(cat /data/users/$USER/root/$session)"
+    if [[ -f "/data/users/$AUSER/root/$session" ]]; then
+      read cmd args <<< "$(cat /data/users/$AUSER/root/$session)"
       case "$cmd" in
       *rebuild)
-        docker build -t "$USER/$ENV" .
+        docker build -t "$AUSER/$AENV" .
         ;;
       *switch)
         echo "Switching to $args ... "
@@ -61,16 +110,16 @@ env-session() {
         ;;
       *commit)
         echo "Committing to $args ... "
-        docker commit "$session" "$USER/$ENV" > /dev/null
+        docker commit "$session" "$AUSER/$AENV" > /dev/null
         ;;
       esac
-      rm -f "/data/users/$USER/root/$session"
+      rm -f "/data/users/$AUSER/root/$session"
     fi
     docker rm -f "$session" &> /dev/null
     docker run -it \
       --name "$session" \
-      --net "container:$USER.$ENV" \
-      --env "HOSTNAME=$ENV" \
+      --net "container:$docker_name" \
+      --env "HOSTNAME=$docker_host" \
       --env "ENVY_SESSION=$session" \
       --env "ENVY_RANDOM=$RANDOM" \
       --env "DOCKER_HOST=unix:///env/run/docker.sock" \
@@ -78,11 +127,11 @@ env-session() {
       --volume "$HOST_DATA/.envcmd:/sbin/rebuild:ro" \
       --volume "$HOST_DATA/.envcmd:/sbin/switch:ro" \
       --volume "$HOST_DATA/.envcmd:/sbin/commit:ro" \
-      --volume "$HOST_DATA/users/$USER/envs/$ENV:/env" \
-      --volume "$HOST_DATA/users/$USER/root:/root" \
-      --volume "$HOST_DATA/users/$USER/home:/home/$USER" \
+      --volume "$HOST_DATA/users/$AUSER/envs/$AENV:/env" \
+      --volume "$HOST_DATA/users/$AUSER/root:/root" \
+      --volume "$HOST_DATA/users/$AUSER/home:/home/$AUSER" \
       --volume "$HOST_DATA:/admin" \
-      "$USER/$ENV" $(docker-cmd)
+      "$docker_session" $(docker-cmd)
     status=$?
   done
   docker rm -f "$session" > /dev/null
@@ -90,10 +139,10 @@ env-session() {
 }
 
 docker-cmd() {
-  if [[ "$(docker inspect -f {{.Config.Cmd}} $USER/$ENV)" != "<no value>" ]]; then
+  if [[ "$(docker inspect -f {{.Config.Cmd}} $AUSER.$AENV)" != "<no value>" ]]; then
     return
   fi
-  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $USER/$ENV)" != "<no value>" ]]; then
+  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $AUSER.$AENV)" != "<no value>" ]]; then
     return
   fi
   echo "/bin/sh"
@@ -103,6 +152,7 @@ main() {
   set -e
   data-init
   user-init
+  shared-init
   env-init
   env-session
 }

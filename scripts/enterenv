@@ -1,7 +1,23 @@
 #!/bin/bash
 
-IFS="+" read USER ENV <<< "${USER:?}"
-ENV="${ENV:-$USER}"
+# A temporary varible to help checkin whether the environment has been explicitly
+# set to blank
+ENVIRONMENT_SET='0'
+if [[ "${USER:?}" =~ '+' ]]; then
+  ENVIRONMENT_SET='1'
+fi
+
+IFS="+" read USER ENV <<< "${USER}"
+
+THROWAWAY='0'
+if [ "$ENVIRONMENT_SET" = '1' ] && [ -z "$ENV" ]; then
+  THROWAWAY='1'
+else
+  ENV=$USER
+fi
+
+# There's no need for this to be around anymore from this point on
+unset ENVIRONMENT_SET
 
 # The path relative to the host Docker machine where data will be persisted, used
 # for adjusting paths when nesting containers
@@ -105,6 +121,9 @@ env-session() {
     status=$?
   done
   docker rm -f "$session" > /dev/null
+  if [ "$THROWAWAY" = '1' ]; then
+    docker rmi "$ENV_IMAGE" > /dev/null
+  fi
   [[ "$status" == "128" ]] || exit "$status"
 }
 

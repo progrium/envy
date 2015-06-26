@@ -10,8 +10,10 @@ HOST_DATA="${HOST_DATA:?}"
 # This is where users environments will be stored
 USER_ROOT="${USER_ROOT:-/data/users/$USER}"
 
+ENV_IMAGE="$USER/$ENV"
+
 data-init() {
-  mkdir -p /data/users
+  mkdir -p $(readlink -f "${USER_ROOT}/..")
   cp /bin/envcmd /data/.envcmd
 }
 
@@ -30,9 +32,9 @@ env-init() {
   fi
   env-docker
   cd "$USER_ROOT/envs/$ENV"
-  if ! docker history "$USER/$ENV" &> /dev/null; then
+  if ! docker history $ENV_IMAGE &> /dev/null; then
     echo "Building environment ... "
-    docker build -t "$USER/$ENV" . &> /dev/null
+    docker build -t $ENV_IMAGE . &> /dev/null
   fi
 }
 
@@ -58,7 +60,7 @@ env-session() {
       read cmd args <<< "$(cat $USER_ROOT/root/$session)"
       case "$cmd" in
       *rebuild)
-        docker build -t "$USER/$ENV" .
+        docker build -t "$ENV_IMAGE" .
         ;;
       *switch)
         echo "Switching to $args ... "
@@ -67,7 +69,7 @@ env-session() {
         ;;
       *commit)
         echo "Committing to $args ... "
-        docker commit "$session" "$USER/$ENV" > /dev/null
+        docker commit "$session" "$ENV_IMAGE" > /dev/null
         ;;
       esac
       rm -f "$USER_ROOT/root/$session"
@@ -88,7 +90,7 @@ env-session() {
       --volume "$HOST_DATA/users/$USER/root:/root" \
       --volume "$HOST_DATA/users/$USER/home:/home/$USER" \
       --volume "$HOST_DATA:/admin" \
-      "$USER/$ENV" $(docker-cmd)
+      "$ENV_IMAGE" $(docker-cmd)
     status=$?
   done
   docker rm -f "$session" > /dev/null
@@ -96,10 +98,10 @@ env-session() {
 }
 
 docker-cmd() {
-  if [[ "$(docker inspect -f {{.Config.Cmd}} $USER/$ENV)" != "<no value>" ]]; then
+  if [[ "$(docker inspect -f {{.Config.Cmd}} $ENV_IMAGE)" != "<no value>" ]]; then
     return
   fi
-  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $USER/$ENV)" != "<no value>" ]]; then
+  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $ENV_IMAGE)" != "<no value>" ]]; then
     return
   fi
   echo "/bin/sh"

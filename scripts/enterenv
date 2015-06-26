@@ -24,7 +24,11 @@ user-init() {
   if [[ ! -d "$USER_ROOT" ]]; then
     mkdir -p "$USER_ROOT"
     mkdir -p "$USER_ROOT/envs"
-    mkdir -p "$USER_ROOT/home"
+    if $(wget --spider https://github.com/$USER/envy.home &>/dev/null); then
+      git clone https://github.com/$USER/envy.home.git "$USER_ROOT/home"
+    else
+      mkdir -p "$USER_ROOT/home"
+    fi
     cp -R /tmp/data/root "$USER_ROOT/root"
   fi
 }

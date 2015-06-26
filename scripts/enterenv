@@ -1,40 +1,75 @@
 #!/bin/bash
 
-IFS="+" read USER ENV <<< "${USER:?}"
-ENV="${ENV:-$USER}"
+# A temporary varible to help checkin whether the environment has been explicitly
+# set to blank
+ENVIRONMENT_SET='0'
+if [[ "${USER:?}" =~ '+' ]]; then
+  ENVIRONMENT_SET='1'
+fi
+
+IFS="+" read USER ENV <<< "${USER}"
+
+THROWAWAY='0'
+if [ "$ENVIRONMENT_SET" = '1' ] && [ -z "$ENV" ]; then
+  THROWAWAY='1'
+else
+  ENV=$USER
+fi
+
+# There's no need for this to be around anymore from this point on
+unset ENVIRONMENT_SET
+
+# The path relative to the host Docker machine where data will be persisted, used
+# for adjusting paths when nesting containers
 HOST_DATA="${HOST_DATA:?}"
 
+# This is where users environments will be stored
+USER_ROOT="${USER_ROOT:-"/data/users/$USER"}"
+
+# Not really needed to be defined as a variable but allows for injecting its value
+# from outside (might be useful for testing purposes)
+GH_ENVY_HOME=${GH_ENVY_HOME:-"https://github.com/$USER/envy.home.git"}
+
+# The obvious ones
+ENV_IMAGE="$USER/$ENV"
+ENV_ROOT="$USER_ROOT/envs/$ENV"
+DIND_CONTAINER_NAME="$USER.$ENV"
+
 data-init() {
-  mkdir -p /data/users
+  mkdir -p $(readlink -f "${USER_ROOT}/..")
   cp /bin/envcmd /data/.envcmd
 }
 
 user-init() {
-  if [[ ! -d "/data/users/$USER" ]]; then
-    mkdir -p "/data/users/$USER"
-    mkdir -p "/data/users/$USER/envs"
-    mkdir -p "/data/users/$USER/home"
-    cp -R /tmp/data/root "/data/users/$USER/root"
+  if [[ ! -d "$USER_ROOT" ]]; then
+    mkdir -p "$USER_ROOT"
+    mkdir -p "$USER_ROOT/envs"
+    if $(wget --spider $GH_ENVY_HOME &>/dev/null); then
+      git clone $GH_ENVY_HOME "$USER_ROOT/home"
+    else
+      mkdir -p "$USER_ROOT/home"
+    fi
+    cp -R /tmp/data/root "$USER_ROOT/root"
   fi
 }
 
 env-init() {
-  if [[ ! -d "/data/users/$USER/envs/$ENV" ]]; then
-    cp -R /tmp/data/env "/data/users/$USER/envs/$ENV"
+  if [[ ! -d "$ENV_ROOT" ]]; then
+    cp -R /tmp/data/env "$ENV_ROOT"
   fi
   env-docker
-  cd "/data/users/$USER/envs/$ENV"
-  if ! docker history "$USER/$ENV" &> /dev/null; then
+  cd "$ENV_ROOT"
+  if ! docker history $ENV_IMAGE &> /dev/null; then
     echo "Building environment ... "
-    docker build -t "$USER/$ENV" . &> /dev/null
+    docker build -t $ENV_IMAGE . &> /dev/null
   fi
 }
 
 env-docker() {
-  mkdir -p "/data/users/$USER/envs/$ENV/run"
-  if ! docker diff "$USER.$ENV" &> /dev/null; then
+  mkdir -p "$ENV_ROOT/run"
+  if ! docker diff $DIND_CONTAINER_NAME &> /dev/null; then
     docker run -d --privileged \
-      --name "$USER.$ENV" \
+      --name $DIND_CONTAINER_NAME \
       --hostname "$ENV" \
       --env PORT=2375 \
       --restart always \
@@ -48,11 +83,11 @@ env-session() {
   local status="128"
   set +e
   while [[ "$status" == "128" ]]; do
-    if [[ -f "/data/users/$USER/root/$session" ]]; then
-      read cmd args <<< "$(cat /data/users/$USER/root/$session)"
+    if [[ -f "$USER_ROOT/root/$session" ]]; then
+      read cmd args <<< "$(cat $USER_ROOT/root/$session)"
       case "$cmd" in
       *rebuild)
-        docker build -t "$USER/$ENV" .
+        docker build -t "$ENV_IMAGE" .
         ;;
       *switch)
         echo "Switching to $args ... "
@@ -61,15 +96,15 @@ env-session() {
         ;;
       *commit)
         echo "Committing to $args ... "
-        docker commit "$session" "$USER/$ENV" > /dev/null
+        docker commit "$session" "$ENV_IMAGE" > /dev/null
         ;;
       esac
-      rm -f "/data/users/$USER/root/$session"
+      rm -f "$USER_ROOT/root/$session"
     fi
     docker rm -f "$session" &> /dev/null
     docker run -it \
       --name "$session" \
-      --net "container:$USER.$ENV" \
+      --net "container:$DIND_CONTAINER_NAME" \
       --env "HOSTNAME=$ENV" \
       --env "ENVY_SESSION=$session" \
       --env "ENVY_RANDOM=$RANDOM" \
@@ -82,18 +117,21 @@ env-session() {
       --volume "$HOST_DATA/users/$USER/root:/root" \
       --volume "$HOST_DATA/users/$USER/home:/home/$USER" \
       --volume "$HOST_DATA:/admin" \
-      "$USER/$ENV" $(docker-cmd)
+      "$ENV_IMAGE" $(docker-cmd)
     status=$?
   done
   docker rm -f "$session" > /dev/null
+  if [ "$THROWAWAY" = '1' ]; then
+    docker rmi "$ENV_IMAGE" > /dev/null
+  fi
   [[ "$status" == "128" ]] || exit "$status"
 }
 
 docker-cmd() {
-  if [[ "$(docker inspect -f {{.Config.Cmd}} $USER/$ENV)" != "<no value>" ]]; then
+  if [[ "$(docker inspect -f {{.Config.Cmd}} $ENV_IMAGE)" != "<no value>" ]]; then
     return
   fi
-  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $USER/$ENV)" != "<no value>" ]]; then
+  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $ENV_IMAGE)" != "<no value>" ]]; then
     return
   fi
   echo "/bin/sh"

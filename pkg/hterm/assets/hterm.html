@@ -60,13 +60,17 @@ ws = new WebSocket(((window.location.protocol === 'https:')?'wss://':'ws://')
             + window.location.host + window.location.pathname + '/hterm');
 ws.onopen = function() {
   lib.init(function() {
+      localStorage.clear()
       term = new hterm.Terminal();
       window.term = term;
       term.decorate(document.getElementById('terminal'));
-      term.setCursorPosition(0, 0);
-      term.setCursorVisible(true);
+      term.prefs_.set('audible-bell-sound', '')
       term.prefs_.set('ctrl-c-copy', true);
       term.prefs_.set('use-default-window-copy', true);
+      term.prefs_.set('font-size', 24)
+      term.prefs_.set('cursor-color', 'rgba(100, 100, 100, 0.5)')
+      term.setCursorPosition(0, 0);
+      term.setCursorVisible(true);
       term.runCommandClass(Term);
       ws.send(JSON.stringify({
           args: document.location.hash.substr(1),

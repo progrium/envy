@@ -1,5 +1,5 @@
 
-build:
+build: hterm
 	docker build -t progrium/envy .
 
 dev: build
@@ -10,3 +10,6 @@ dev: build
 		-p 2222:22 \
 		-e HOST_DATA=/tmp/data \
 		progrium/envy
+
+hterm:
+	cd pkg/hterm && go generate

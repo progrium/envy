@@ -17,6 +17,6 @@ COPY . /go/src/github.com/progrium/envy
 WORKDIR /go/src/github.com/progrium/envy/cmd
 RUN go get && go build -o /bin/envyd
 
-VOLUME /data
+VOLUME /envy
 EXPOSE 22 80
 ENTRYPOINT ["codep", "/bin/execd -e -k /tmp/data/id_host /bin/authenv /bin/enterenv", "/bin/envyd"]

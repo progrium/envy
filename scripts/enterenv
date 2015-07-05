@@ -1,9 +1,5 @@
 #!/bin/bash
 
-IFS="+" read USER ENV <<< "${USER:?}"
-ENV="${ENV:-$USER}"
-HOST_DATA="${HOST_DATA:?}"
-
 data-init() {
   mkdir -p /data/users
   cp /bin/envcmd /data/.envcmd
@@ -14,31 +10,33 @@ user-init() {
     mkdir -p "/data/users/$USER"
     mkdir -p "/data/users/$USER/envs"
     mkdir -p "/data/users/$USER/home"
-    cp -R /tmp/data/root "/data/users/$USER/root"
+    mkdir -p "/data/users/$USER/root"
+    cp /tmp/data/home/.bashrc "/data/users/$USER/home"
+    cp /tmp/data/home/.bashrc "/data/users/$USER/root"
   fi
 }
 
 env-init() {
-  if [[ ! -d "/data/users/$USER/envs/$ENV" ]]; then
-    cp -R /tmp/data/env "/data/users/$USER/envs/$ENV"
+  if [[ ! -d "/data/users/$USER/envs/$ENVIRON" ]]; then
+    cp -R /tmp/data/env "/data/users/$USER/envs/$ENVIRON"
   fi
   env-docker
-  cd "/data/users/$USER/envs/$ENV"
-  if ! docker history "$USER/$ENV" &> /dev/null; then
+  cd "/data/users/$USER/envs/$ENVIRON"
+  if ! docker history "$USER/$ENVIRON" &> /dev/null; then
     echo "Building environment ... "
-    docker build -t "$USER/$ENV" . &> /dev/null
+    docker build -t "$USER/$ENVIRON" . &> /dev/null
   fi
 }
 
 env-docker() {
-  mkdir -p "/data/users/$USER/envs/$ENV/run"
-  if ! docker diff "$USER.$ENV" &> /dev/null; then
+  mkdir -p "/data/users/$USER/envs/$ENVIRON/run"
+  if ! docker diff "$USER.$ENVIRON" &> /dev/null; then
     docker run -d --privileged \
-      --name "$USER.$ENV" \
-      --hostname "$ENV" \
+      --name "$USER.$ENVIRON" \
+      --hostname "$ENVIRON" \
       --env PORT=2375 \
       --restart always \
-      --volume "$HOST_DATA/users/$USER/envs/$ENV/run:/var/run" \
+      --volume "$HOST_DATA/users/$USER/envs/$ENVIRON/run:/var/run" \
       jpetazzo/dind > /dev/null
   fi
 }
@@ -48,52 +46,60 @@ env-session() {
   local status="128"
   set +e
   while [[ "$status" == "128" ]]; do
-    if [[ -f "/data/users/$USER/root/$session" ]]; then
-      read cmd args <<< "$(cat /data/users/$USER/root/$session)"
-      case "$cmd" in
-      *rebuild)
-        docker build -t "$USER/$ENV" .
-        ;;
-      *switch)
-        echo "Switching to $args ... "
-        ENV="$args"
-        env-init
-        ;;
-      *commit)
-        echo "Committing to $args ... "
-        docker commit "$session" "$USER/$ENV" > /dev/null
-        ;;
-      esac
-      rm -f "/data/users/$USER/root/$session"
-    fi
+    session-reload-env "$session"
     docker rm -f "$session" &> /dev/null
     docker run -it \
       --name "$session" \
-      --net "container:$USER.$ENV" \
-      --env "HOSTNAME=$ENV" \
+      --net "container:$USER.$ENVIRON" \
+      --env "HOSTNAME=$ENVIRON" \
       --env "ENVY_SESSION=$session" \
       --env "ENVY_RANDOM=$RANDOM" \
+      --env "ENVY_USER=$USER" \
+      --env "ENV=/env/envyrc" \
       --env "DOCKER_HOST=unix:///env/run/docker.sock" \
       --volume "$HOST_DATA/.envcmd:/sbin/reload:ro" \
       --volume "$HOST_DATA/.envcmd:/sbin/rebuild:ro" \
       --volume "$HOST_DATA/.envcmd:/sbin/switch:ro" \
       --volume "$HOST_DATA/.envcmd:/sbin/commit:ro" \
-      --volume "$HOST_DATA/users/$USER/envs/$ENV:/env" \
+      --volume "$HOST_DATA/users/$USER/envs/$ENVIRON:/env" \
       --volume "$HOST_DATA/users/$USER/root:/root" \
       --volume "$HOST_DATA/users/$USER/home:/home/$USER" \
       --volume "$HOST_DATA:/admin" \
-      "$USER/$ENV" $(docker-cmd)
+      "$USER/$ENVIRON" $(docker-cmd "$USER/$ENVIRON")
     status=$?
   done
   docker rm -f "$session" > /dev/null
   [[ "$status" == "128" ]] || exit "$status"
 }
 
+session-reload-env() {
+  declare session="$1"
+  if [[ -f "/data/users/$USER/root/$session" ]]; then
+    read cmd args <<< "$(cat /data/users/$USER/root/$session)"
+    case "$cmd" in
+    *rebuild)
+      docker build -t "$USER/$ENVIRON" .
+      ;;
+    *switch)
+      echo "Switching to $args ... "
+      ENVIRON="$args"
+      env-init
+      ;;
+    *commit)
+      echo "Committing to ${args:-$USER/$ENVIRON} ... "
+      docker commit "$session" "${args:-$USER/$ENVIRON}" > /dev/null
+      ;;
+    esac
+    rm -f "/data/users/$USER/root/$session"
+  fi
+}
+
 docker-cmd() {
-  if [[ "$(docker inspect -f {{.Config.Cmd}} $USER/$ENV)" != "<no value>" ]]; then
+  declare image="$1"
+  if [[ "$(docker inspect -f {{.Config.Cmd}} $image)" != "<no value>" ]]; then
     return
   fi
-  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $USER/$ENV)" != "<no value>" ]]; then
+  if [[ "$(docker inspect -f {{.Config.Entrypoint}} $image)" != "<no value>" ]]; then
     return
   fi
   echo "/bin/sh"
@@ -101,6 +107,10 @@ docker-cmd() {
 
 main() {
   set -e
+  : "${USER:?}" "${HOST_DATA:?}"
+  IFS="+" read USER ENVIRON <<< "${USER:?}"
+  ENVIRON="${ENVIRON:-$USER}"
+
   data-init
   user-init
   env-init

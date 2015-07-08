@@ -34,10 +34,9 @@ env-docker() {
     docker run -d --privileged \
       --name "$USER.$ENVIRON" \
       --hostname "$ENVIRON" \
-      --env PORT=2375 \
       --restart always \
       --volume "$HOST_ROOT/users/$USER/envs/$ENVIRON/run:/var/run" \
-      jpetazzo/dind > /dev/null
+      progrium/dind > /dev/null
   fi
 }
 
@@ -108,7 +107,8 @@ docker-cmd() {
 main() {
   set -e
   : "${USER:?}" "${HOST_ROOT:?}"
-  IFS="+" read USER ENVIRON <<< "${USER:?}"
+  SSH_USER="$USER"
+  IFS="+" read USER ENVIRON <<< "$SSH_USER"
   ENVIRON="${ENVIRON:-$USER}"
 
   root-init

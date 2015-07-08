@@ -1,5 +1,13 @@
 #!/bin/bash
 
+clean-up() {
+  if [[ -n "${LAST_SESSION}" ]]; then
+    docker stop $LAST_SESSION
+    docker rm $LAST_SESSION
+  fi
+}
+trap clean-up SIGHUP
+
 root-init() {
   mkdir -p /envy/users
   cp /bin/envcmd /envy/.envcmd
@@ -47,6 +55,7 @@ env-session() {
   while [[ "$status" == "128" ]]; do
     session-reload-env "$session"
     docker rm -f "$session" &> /dev/null
+    export LAST_SESSION=$session
     docker run -it \
       --name "$session" \
       --net "container:$USER.$ENVIRON" \

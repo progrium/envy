@@ -3,6 +3,7 @@ package hterm
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -67,6 +68,18 @@ func HandleSocket(w http.ResponseWriter, r *http.Request, ptyFunc func(string) *
 			err := dec.Decode(&obj)
 			if err != nil {
 				log.Println("hterm:", err)
+				if err == io.EOF {
+					log.Println("hterm: sending SIGHUP to process")
+					pidForKill := fmt.Sprintf("-%d", pty.process.Pid)
+					cmd := exec.Command("kill", "-1", pidForKill)
+					cmd.Start()
+					cmd.Wait()
+					pty.Close()
+
+					log.Println("hterm: waiting for exit")
+					processState, err := pty.process.Wait()
+					log.Println("hterm:", processState, err)
+				}
 				break
 			}
 
@@ -87,6 +100,7 @@ func HandleSocket(w http.ResponseWriter, r *http.Request, ptyFunc func(string) *
 
 type Pty struct {
 	*os.File
+	process *os.Process
 }
 
 // winsize stores the Height and Width of a terminal.
@@ -105,5 +119,5 @@ func NewPty(cmd *exec.Cmd) (*Pty, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Pty{cmdPty}, nil
+	return &Pty{cmdPty, cmd.Process}, nil
 }

@@ -20,6 +20,7 @@ env-init() {
   if [[ ! -d "/envy/users/$USER/envs/$ENVIRON" ]]; then
     cp -R /tmp/data/env "/envy/users/$USER/envs/$ENVIRON"
   fi
+  mkdir -p "/envy/users/$USER/work/$ENVIRON/"
   env-docker
   cd "/envy/users/$USER/envs/$ENVIRON"
   if ! docker history "$USER/$ENVIRON" &> /dev/null; then
@@ -61,6 +62,7 @@ env-session() {
       --volume "$HOST_ROOT/.envcmd:/sbin/switch:ro" \
       --volume "$HOST_ROOT/.envcmd:/sbin/commit:ro" \
       --volume "$HOST_ROOT/users/$USER/envs/$ENVIRON:/env" \
+      --volume "$HOST_ROOT/users/$USER/work/$ENVIRON:/work" \
       --volume "$HOST_ROOT/users/$USER/root:/root" \
       --volume "$HOST_ROOT/users/$USER/home:/home/$USER" \
       --volume "$HOST_ROOT:/envy" \

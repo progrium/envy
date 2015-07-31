@@ -1,4 +1,4 @@
-source /env/envyrc
+source /etc/envyrc
 
 if [ "$TERM" = "xterm-color" ] || \
   ([ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null); then

@@ -10,13 +10,15 @@ RUN curl -Ls https://github.com/progrium/execd/releases/download/v0.1.0/execd_0.
   && entrykit --symlink
 
 ADD ./data /tmp/data
-ADD ./scripts /bin/
 
 ENV GOPATH /go
 COPY . /go/src/github.com/progrium/envy
-WORKDIR /go/src/github.com/progrium/envy/cmd
-RUN go get && go build -o /bin/envyd
+WORKDIR /go/src/github.com/progrium/envy
+RUN go get && CGO_ENABLED=0 go build -a -installsuffix cgo -o /bin/envy \
+  && ln -s /bin/envy /bin/enter \
+  && ln -s /bin/envy /bin/auth \
+  && ln -s /bin/envy /bin/serve
 
 VOLUME /envy
 EXPOSE 22 80
-ENTRYPOINT ["codep", "/bin/execd -e -k /tmp/data/id_host /bin/authenv /bin/enterenv", "/bin/envyd"]
+ENTRYPOINT ["codep", "/bin/execd -e -k /tmp/data/id_host /bin/auth /bin/enter", "/bin/serve"]

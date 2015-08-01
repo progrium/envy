@@ -3,6 +3,7 @@ package envy
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"time"
 )
 
@@ -21,35 +22,43 @@ var cmdSessionReload = &Command{
 	Group: "session",
 	Name:  "reload",
 	Run: func(context *RunContext) {
-		if context.Session != nil {
-			context.Exit(128)
-		}
+		context.Exit(128)
 	},
 }
 
 var cmdSessionCommit = &Command{
-	Short: "commit session state to environment image",
+	Short: "commit session changes to environment image",
 	Long:  `Commit saves changes made in the session to the environment image.`,
 
 	Group: "session",
 	Name:  "commit",
 	Args:  []string{"[<environ>]"},
 	Run: func(context *RunContext) {
-		fmt.Fprintln(context.Stdout, "commit!")
-		//echo "Committing to ${args:-$USER/$ENVIRON} ... "
-		//docker commit "$session" "${args:-$USER/$ENVIRON}" > /dev/null
+		var environ *Environ
+		if context.Arg(0) != "" {
+			environ = GetEnviron(context.Session.User.Name, context.Arg(0))
+		} else {
+			environ = context.Session.Environ()
+		}
+		fmt.Fprintf(context.Stdout, "Committing to %s ...\n", environ.Name)
+		dockerCommit(context.Session.DockerName(), environ.DockerImage())
+		context.Exit(128)
 	},
 }
 
 var cmdSessionSwitch = &Command{
-	//Short: "commit session state to environment image",
-	//Long:  `Commit saves changes made in the session to the environment image.`,
+	Short: "switch session to different environment",
+	Long:  `Switch reloads session from a new environment image.`,
 
 	Group: "session",
 	Name:  "switch",
 	Args:  []string{"[<environ>]"},
 	Run: func(context *RunContext) {
-		fmt.Fprintln(context.Stdout, "switch!")
+		if context.Arg(0) == "" {
+			return
+		}
+		context.Session.SetEnviron(context.Arg(0))
+		context.Exit(128)
 	},
 }
 
@@ -58,23 +67,31 @@ type Session struct {
 	Name string
 }
 
+func (s *Session) Environ() *Environ {
+	return GetEnviron(s.User.Name, readFile(s.Path("environ")))
+}
+
+func (s *Session) SetEnviron(name string) {
+	writeFile(s.Path("environ"), name)
+}
+
 func (s *Session) Path(parts ...string) string {
 	return Envy.Path(append([]string{"users", s.User.Name, "sessions", s.Name}, parts...)...)
+}
+
+func (s *Session) DockerName() string {
+	return s.Name
 }
 
 func (s *Session) Enter(context *RunContext, environ *Environ) int {
 	defer s.Cleanup()
 	fmt.Fprintln(context.Stdout, "Entering session...")
-	envySock := startEnvySock(s.Path("run/envy.sock"), &SessionContext{
-		User:    s.User.Name,
-		Session: s.Name,
-		Environ: environ.Name,
-		Admin:   true,
-	})
+	s.SetEnviron(environ.Name)
+	envySock := startEnvySock(s.Path("run/envy.sock"), s)
 	defer envySock.Close()
 	for {
-		// reload commands?
 		dockerRemove(s.Name)
+		environ := s.Environ()
 		args := []string{"run", "-it",
 			fmt.Sprintf("--name=%s", s.Name),
 			fmt.Sprintf("--net=container:%s", environ.DockerName()),
@@ -92,15 +109,16 @@ func (s *Session) Enter(context *RunContext, environ *Environ) int {
 			fmt.Sprintf("--volume=%s:/root/environ", Envy.HostPath(environ.Path())),
 			fmt.Sprintf("--volume=%s:/root", Envy.HostPath(s.User.Path("root"))),
 			fmt.Sprintf("--volume=%s:/home/%s", Envy.HostPath(s.User.Path("home")), s.User.Name),
-			fmt.Sprintf("--volume=%s:/envy", Envy.HostPath()), // TODO: admin only
 			fmt.Sprintf("--volume=%s:/sbin/envy:ro", Envy.HostPath("bin/envy")),
-
-			environ.Image(),
 		}
-		if dockerShellCmd(environ.Image()) != nil {
-			args = append(args, dockerShellCmd(environ.Image())...)
+		if s.User.Admin() {
+			args = append(args, fmt.Sprintf("--volume=%s:/envy", Envy.HostPath()))
 		}
-		status := context.Run("/bin/docker", args...)
+		args = append(args, environ.DockerImage())
+		if dockerShellCmd(environ.DockerImage()) != nil {
+			args = append(args, dockerShellCmd(environ.DockerImage())...)
+		}
+		status := context.Run(exec.Command("/bin/docker", args...))
 		if status != 128 {
 			return status
 		}
@@ -125,6 +143,7 @@ func GetSession(user string) *Session {
 func nextSessionName(user *User) string {
 	n := 0
 	// TODO: panic on max n
+	// TODO: clean up sessions without docker running
 	for {
 		s := user.Session(fmt.Sprintf("%s.%v", user.Name, n))
 		if !exists(s.Path()) {

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,39 @@ func exists(path ...string) bool {
 	}
 	assert(err)
 	return true
+}
+
+func readFile(path string) string {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(string(data), "\n ")
+}
+
+func normalizeLine(s string) string {
+	return strings.Trim(s, "\n") + "\n"
+}
+
+func writeFile(path, data string) {
+	assert(ioutil.WriteFile(path, []byte(normalizeLine(data)), 0644))
+}
+
+func appendFile(path, data string) {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	assert(err)
+	defer f.Close()
+	_, err = f.WriteString(normalizeLine(data))
+	assert(err)
+}
+
+func grepFile(path, line string) bool {
+	for _, l := range strings.Split(readFile(path), "\n") {
+		if l == line {
+			return true
+		}
+	}
+	return false
 }
 
 func mkdirAll(path ...string) {
@@ -139,7 +173,6 @@ func dockerBuild(contextPath, image string, output io.Writer) {
 		Name:         image,
 		OutputStream: output,
 		InputStream:  context,
-		ContextDir:   contextPath,
 	}))
 }
 

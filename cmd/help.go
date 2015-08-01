@@ -23,7 +23,7 @@ var cmdHelp = &Command{
 	Run: func(context *RunContext) {
 		args := context.Args
 		if len(args) == 0 {
-			PrintUsage(context.Stderr)
+			printUsage(context.Stderr, context.Session)
 			return // not os.Exit(2); success
 		}
 		switch args[0] {
@@ -63,17 +63,19 @@ var usageTemplate = template.Must(template.New("usage").Parse(`
 Usage: envy <command> [options] [arguments]
 
 Commands:
-{{range .Commands}}{{if .Runnable}}{{if .Listable}}
-    {{.FullName | printf (print "%-" $.MaxRunListName "s")}}  {{.Short}}{{end}}{{end}}{{end}}
+{{range .Commands}}
+    {{.FullName | printf (print "%-" $.MaxRunListName "s")}}  {{.Short}}{{end}}
 
 Run 'envy help [command]' for details.
 `[1:]))
 
-func PrintUsage(output io.Writer) {
+func printUsage(output io.Writer, session *Session) {
 	var runListNames []string
+	var runListCmds []*Command
 	for i := range commands {
-		if commands[i].Runnable() && commands[i].Listable() {
+		if commands[i].Runnable() && commands[i].Listable(session) {
 			runListNames = append(runListNames, commands[i].FullName())
+			runListCmds = append(runListCmds, commands[i])
 		}
 	}
 
@@ -81,7 +83,7 @@ func PrintUsage(output io.Writer) {
 		Commands       []*Command
 		MaxRunListName int
 	}{
-		commands,
+		runListCmds,
 		maxStrLen(runListNames),
 	})
 }

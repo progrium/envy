@@ -25,9 +25,12 @@ type Command struct {
 	Admin  bool
 }
 
-func (c *Command) Match(args []string, session *SessionContext) (bool, []string) {
+func (c *Command) Match(args []string, session *Session) (bool, []string) {
 	if c.System && session == nil && c.Name == filepath.Base(os.Args[0]) {
 		return true, args
+	}
+	if c.Admin && session != nil && !session.User.Admin() {
+		return false, nil
 	}
 	if len(args) > 0 && c.Group == "" && args[0] == c.Name {
 		return true, args[1:]
@@ -42,7 +45,7 @@ func (c *Command) PrintUsage(output io.Writer) {
 	if c.Runnable() {
 		fmt.Fprintf(output, "Usage: envy %s\n\n", c.FullUsage())
 	}
-	fmt.Fprintln(output, c.Long)
+	fmt.Fprintf(output, "%s\n\n", c.Long)
 }
 
 func (c *Command) FullName() string {
@@ -66,14 +69,17 @@ func (c *Command) Runnable() bool {
 	return c.Run != nil
 }
 
-func (c *Command) Listable() bool {
+func (c *Command) Listable(session *Session) bool {
+	if session != nil && !session.User.Admin() && c.Admin {
+		return false
+	}
 	return c.Short != ""
 }
 
 type RunContext struct {
 	Command *Command
 	Args    []string
-	Session *SessionContext
+	Session *Session
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Stdin   io.Reader
@@ -81,20 +87,19 @@ type RunContext struct {
 	Exited  bool
 }
 
-type SessionContext struct {
-	User    string
-	Session string
-	Environ string
-	Admin   bool
-}
-
 func (c *RunContext) Exit(status int) {
 	c.Exiter <- status
 	c.Exited = true
 }
 
-func (c *RunContext) Run(path string, args ...string) int {
-	cmd := exec.Command(path, args...)
+func (c *RunContext) Arg(i int) string {
+	if i+1 > len(c.Args) {
+		return ""
+	}
+	return c.Args[i]
+}
+
+func (c *RunContext) Run(cmd *exec.Cmd) int {
 	cmd.Stdin = c.Stdin
 	cmd.Stdout = c.Stdout
 	cmd.Stderr = c.Stderr
@@ -111,16 +116,16 @@ func (c *RunContext) Run(path string, args ...string) int {
 	return 0
 }
 
-func RunCmd(args []string, stdin io.Reader, stdout, stderr io.Writer, exitCh chan int, context *SessionContext) {
+func RunCmd(args []string, stdin io.Reader, stdout, stderr io.Writer, exitCh chan int, session *Session) {
 	ctx := &RunContext{
 		Stdout:  stdout,
 		Stderr:  stderr,
 		Stdin:   stdin,
 		Exiter:  exitCh,
-		Session: context,
+		Session: session,
 	}
 	for _, cmd := range commands {
-		if ok, cmdargs := cmd.Match(args, context); ok && cmd.Runnable() {
+		if ok, cmdargs := cmd.Match(args, session); ok && cmd.Runnable() {
 			ctx.Command = cmd
 			ctx.Args = cmdargs
 			cmd.Run(ctx)
@@ -130,7 +135,9 @@ func RunCmd(args []string, stdin io.Reader, stdout, stderr io.Writer, exitCh cha
 			return
 		}
 	}
-	fmt.Fprintf(stderr, "Unknown command: %s\n", args[:])
-	PrintUsage(stderr)
+	if len(args) > 0 {
+		fmt.Fprintf(stderr, "Unknown command: %s\n", strings.Join(args[:], " "))
+	}
+	printUsage(stderr, session)
 	exitCh <- 2
 }

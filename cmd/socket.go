@@ -41,7 +41,7 @@ func SocketClient(args []string) {
 	}
 }
 
-func startEnvySock(path string, context *SessionContext) net.Listener {
+func startEnvySock(path string, session *Session) net.Listener {
 	os.Remove(path)
 	ln, err := net.Listen("unix", path)
 	assert(err)
@@ -51,13 +51,13 @@ func startEnvySock(path string, context *SessionContext) net.Listener {
 			if err != nil {
 				break
 			}
-			go handleSSHConn(conn, context)
+			go handleSSHConn(conn, session)
 		}
 	}()
 	return ln
 }
 
-func handleSSHConn(conn net.Conn, context *SessionContext) {
+func handleSSHConn(conn net.Conn, session *Session) {
 	defer conn.Close()
 	config := &ssh.ServerConfig{NoClientAuth: true}
 	privateBytes, err := ioutil.ReadFile(Envy.DataPath("id_host"))
@@ -76,11 +76,11 @@ func handleSSHConn(conn net.Conn, context *SessionContext) {
 			ch.Reject(ssh.UnknownChannelType, "unsupported channel type")
 			continue
 		}
-		go handleSSHChannel(ch, context)
+		go handleSSHChannel(ch, session)
 	}
 }
 
-func handleSSHChannel(newChan ssh.NewChannel, context *SessionContext) {
+func handleSSHChannel(newChan ssh.NewChannel, session *Session) {
 	ch, reqs, err := newChan.Accept()
 	if err != nil {
 		log.Println("handle channel failed:", err)
@@ -102,8 +102,12 @@ func handleSSHChannel(newChan ssh.NewChannel, context *SessionContext) {
 			case "exec":
 				var payload = struct{ Value string }{}
 				ssh.Unmarshal(req.Payload, &payload)
-				args := strings.Split(strings.Trim(payload.Value, "\n"), " ")
-				RunCmd(args, ch, ch, ch.Stderr(), exitCh, context)
+				line := strings.Trim(payload.Value, "\n")
+				var args []string
+				if line != "" {
+					args = strings.Split(line, " ")
+				}
+				RunCmd(args, ch, ch, ch.Stderr(), exitCh, session)
 			}
 		}(req)
 	}

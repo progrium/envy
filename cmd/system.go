@@ -25,6 +25,10 @@ var cmdEnter = &Command{
 	Name:   "enter",
 	Run: func(context *RunContext) {
 		user, environ := parseUserEnviron(os.Getenv("USER"))
+		if !Envy.Allow(user, environ) {
+			fmt.Fprintln(context.Stderr, "User is forbidden.")
+			context.Exit(2)
+		}
 		context.Exit(GetSession(user).Enter(context, GetEnviron(user, environ)))
 	},
 }
@@ -79,7 +83,7 @@ var cmdServe = &Command{
 			}
 			w.Header().Set("Hterm-Title", "Envy Term")
 			hterm.Handle(w, r, func(args string) *hterm.Pty {
-				cmd := exec.Command("/bin/enterenv", parts[2])
+				cmd := exec.Command("/bin/enter", parts[2])
 				cmd.Env = os.Environ()
 				cmd.Env = append(cmd.Env, fmt.Sprintf("USER=%s", sshUser))
 				pty, err := hterm.NewPty(cmd)

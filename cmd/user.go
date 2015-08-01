@@ -8,6 +8,13 @@ func (u *User) Path(parts ...string) string {
 	return Envy.Path(append([]string{"users", u.Name}, parts...)...)
 }
 
+func (u *User) Admin() bool {
+	if !exists(Envy.Path("config/admins")) {
+		writeFile(Envy.Path("config/admins"), u.Name)
+	}
+	return grepFile(Envy.Path("config/admins"), u.Name)
+}
+
 func (u *User) Environ(name string) *Environ {
 	return &Environ{
 		Name: name,

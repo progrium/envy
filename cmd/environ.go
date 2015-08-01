@@ -1,8 +1,8 @@
 package envy
 
 import (
-	"bytes"
 	"fmt"
+	"os/exec"
 
 	"github.com/fsouza/go-dockerclient"
 )
@@ -17,10 +17,14 @@ var cmdEnvironRebuild = &Command{
 
 	Group: "environ",
 	Name:  "rebuild",
-	Args:  []string{"[--force]"},
+	Args:  []string{"[--force]"}, // TODO
 	Run: func(context *RunContext) {
-		fmt.Fprintln(context.Stdout, "rebuilding!")
-		// docker build -t "$USER/$ENVIRON" .
+		environ := context.Session.Environ()
+		cmd := exec.Command("/bin/docker", "build", "-t", environ.DockerImage(), ".")
+		cmd.Dir = environ.Path()
+		context.Stdin = nil
+		context.Run(cmd)
+		context.Exit(128)
 	},
 }
 
@@ -33,7 +37,7 @@ func (e *Environ) Path(parts ...string) string {
 	return Envy.Path(append([]string{"users", e.User.Name, "environs", e.Name}, parts...)...)
 }
 
-func (e *Environ) Image() string {
+func (e *Environ) DockerImage() string {
 	return fmt.Sprintf("%s/%s", e.User.Name, e.Name)
 }
 
@@ -67,8 +71,10 @@ func GetEnviron(user, name string) *Environ {
 			},
 		})
 	}
-	if !dockerImage(e.Image()) {
-		dockerBuild(e.Path(), e.Image(), new(bytes.Buffer))
+	if !dockerImage(e.DockerImage()) {
+		cmd := exec.Command("/bin/docker", "build", "-t", e.DockerImage(), ".")
+		cmd.Dir = e.Path()
+		assert(cmd.Run())
 	}
 	return e
 }

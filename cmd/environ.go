@@ -66,6 +66,7 @@ func GetEnviron(user, name string) *Environ {
 				Privileged:    true,
 				RestartPolicy: docker.RestartPolicy{Name: "always"},
 				Binds: []string{
+					fmt.Sprintf("%s:/usr/bin/docker", Envy.HostPath("bin/docker")),
 					fmt.Sprintf("%s:/var/run", Envy.HostPath(e.Path("run"))),
 				},
 			},

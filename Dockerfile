@@ -5,7 +5,7 @@ RUN curl -Ls https://github.com/progrium/execd/releases/download/v0.1.0/execd_0.
     | tar -zxC /bin \
   && curl -Ls https://github.com/progrium/entrykit/releases/download/v0.2.0/entrykit_0.2.0_Linux_x86_64.tgz \
     | tar -zxC /bin \
-  && curl -s https://get.docker.io/builds/Linux/x86_64/docker-1.6.1 > /bin/docker \
+  && curl -s https://get.docker.io/builds/Linux/x86_64/docker-1.6.2 > /bin/docker \
   && chmod +x /bin/docker \
   && entrykit --symlink
 

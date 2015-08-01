@@ -51,4 +51,5 @@ func (r *EnvyRoot) Setup() {
 	}
 	os.RemoveAll(r.Path("bin/envy"))
 	copy("/bin/envy", r.Path("bin/envy"))
+	copy("/bin/docker", r.Path("bin/docker"))
 }

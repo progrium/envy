@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-var Envy = new(EnvyRoot).Setup()
+var Envy = new(EnvyRoot)
 
 type EnvyRoot struct{}
 
@@ -42,11 +42,7 @@ func (r *EnvyRoot) checkUserAcl(user string) bool {
 	return grepFile(r.Path("config/users"), user)
 }
 
-func (r *EnvyRoot) Setup() *EnvyRoot {
-	if os.Args[0] != "/bin/serve" {
-		// is not server
-		return nil
-	}
+func (r *EnvyRoot) Setup() {
 	mkdirAll(r.Path("users"))
 	mkdirAll(r.Path("config"))
 	mkdirAll(r.Path("bin"))
@@ -55,5 +51,4 @@ func (r *EnvyRoot) Setup() *EnvyRoot {
 	}
 	os.RemoveAll(r.Path("bin/envy"))
 	copy("/bin/envy", r.Path("bin/envy"))
-	return r
 }

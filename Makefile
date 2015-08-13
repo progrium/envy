@@ -1,15 +1,17 @@
 
 build: hterm
 	docker build -t progrium/envy .
+	docker tag -f progrium/envy progrium/envy:local
 
-dev: build
+dev:
+	docker build -t progrium/envy:dev -f Dockerfile .
 	docker run --rm --name envy.dev \
 		-v /tmp/envy:/envy \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-p 8000:80 \
 		-p 2222:22 \
 		-e HOST_ROOT=/tmp/envy \
-		progrium/envy
+		progrium/envy:dev
 
 
 test:
@@ -37,6 +39,12 @@ test2:
 		progrium/envy
 	basht /envy/tests/*.bash
 
+clean:
+	docker rmi progrium/envy:local &> /dev/null || true
+	rm -f tests/envy.tgz
+	rm -f tests/dind.tgz
+	rm -f tests/alpine.tgz
+	rm -f tests/ubuntu.tgz
 
 hterm:
 	cd pkg/hterm && go generate

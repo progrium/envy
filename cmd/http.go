@@ -1,4 +1,4 @@
-package main
+package envy
 
 import (
 	"fmt"
@@ -11,15 +11,7 @@ import (
 	"github.com/progrium/envy/pkg/hterm"
 )
 
-func githubAuth(user, passwd string) bool {
-	client := &http.Client{}
-	req, _ := http.NewRequest("GET", "https://api.github.com", nil)
-	req.SetBasicAuth(user, passwd)
-	resp, _ := client.Do(req)
-	return resp.StatusCode == 200
-}
-
-func main() {
+func init() {
 	http.HandleFunc("/u/", func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(r.URL.Path, "/")
 		if len(parts) < 3 {
@@ -37,7 +29,7 @@ func main() {
 		// passthrough auth for hterm. use cookie to do this right
 		if !strings.Contains(r.URL.Path, "hterm") {
 			user, passwd, ok := r.BasicAuth()
-			if !ok || user != pathUser || !githubAuth(user, passwd) {
+			if !ok || user != pathUser || !githubUserAuth(user, passwd) {
 				w.Header().Set("WWW-Authenticate", fmt.Sprintf("Basic realm=\"%s\"", pathUser))
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
@@ -45,7 +37,7 @@ func main() {
 		}
 		w.Header().Set("Hterm-Title", "Envy Term")
 		hterm.Handle(w, r, func(args string) *hterm.Pty {
-			cmd := exec.Command("/bin/enterenv", parts[2])
+			cmd := exec.Command("/bin/enter", parts[2])
 			cmd.Env = os.Environ()
 			cmd.Env = append(cmd.Env, fmt.Sprintf("USER=%s", sshUser))
 			pty, err := hterm.NewPty(cmd)
@@ -55,5 +47,4 @@ func main() {
 			return pty
 		})
 	})
-	log.Fatal(http.ListenAndServe(":80", nil))
 }

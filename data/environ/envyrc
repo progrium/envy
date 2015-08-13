@@ -1,7 +1,7 @@
-alias reload="exec reload"
-alias rebuild="exec rebuild"
-alias switch="exec switch"
-alias commit="exec commit"
+alias reload="exec envy session reload"
+alias switch="exec envy session switch"
+alias commit="exec envy session commit"
+alias rebuild="exec envy environ rebuild"
 
 unset ENV
 

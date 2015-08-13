@@ -97,6 +97,6 @@ environments. One use case for this is to symlink `/root/.ssh` to your envy user
 Envy is best experienced running on port 22 on a host. If you want to move your current OpenSSH
 to port 2222, here is a one-liner that is likely to work:
 ```
-$ sed -i -e s/Port 22/Port 2222/ /etc/ssh/sshd_config
+$ sed -i -e 's/Port 22/Port 2222/' /etc/ssh/sshd_config
 ```
 Then restart SSH.

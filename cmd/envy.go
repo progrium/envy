@@ -4,9 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 var Envy = new(EnvyRoot)
+
+var Cmd = &cobra.Command{
+	Use:   "envy",
+	Short: "",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Usage()
+	},
+}
 
 type EnvyRoot struct{}
 
@@ -50,6 +60,7 @@ func (r *EnvyRoot) Setup() {
 		writeFile(r.Path("config/users"), "*")
 	}
 	os.RemoveAll(r.Path("bin/envy"))
+	os.RemoveAll(r.Path("bin/docker"))
 	copy("/bin/envy", r.Path("bin/envy"))
 	copy("/bin/docker", r.Path("bin/docker"))
 }

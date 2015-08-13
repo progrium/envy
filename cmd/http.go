@@ -32,8 +32,10 @@ func init() {
 			if !ok || user != pathUser || !githubUserAuth(user, passwd) {
 				w.Header().Set("WWW-Authenticate", fmt.Sprintf("Basic realm=\"%s\"", pathUser))
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				log.Println("auth[http]: not allowing", user)
 				return
 			}
+			log.Println("auth[http]: allowing", user)
 		}
 		w.Header().Set("Hterm-Title", "Envy Term")
 		hterm.Handle(w, r, func(args string) *hterm.Pty {

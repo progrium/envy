@@ -2,63 +2,78 @@ package envy
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net"
 	"os"
 	"os/exec"
+	"strings"
+	"syscall"
 	"time"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
 )
 
 func init() {
-	commands = append(commands,
-		cmdSessionReload,
-		cmdSessionCommit,
-		cmdSessionSwitch,
-	)
+	cmdSession.AddCommand(cmdSessionReload)
+	cmdSession.AddCommand(cmdSessionCommit)
+	cmdSession.AddCommand(cmdSessionSwitch)
+	Cmd.AddCommand(cmdSession)
 }
 
-var cmdSessionReload = &Command{
+var cmdSession = &cobra.Command{
+	Use: "session",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Usage()
+	},
+}
+
+var cmdSessionReload = &cobra.Command{
 	Short: "reload session from environment image",
 	Long:  `Reload recreates the current session container from the environment image.`,
 
-	Group: "session",
-	Name:  "reload",
-	Run: func(context *RunContext) {
-		context.Exit(128)
+	Use: "reload",
+	Run: func(cmd *cobra.Command, args []string) {
+		session := GetSession(os.Getenv("ENVY_USER"), os.Getenv("ENVY_SESSION"))
+		log.Println(session.User.Name, "| reloading session", session.Name)
+		os.Exit(128)
 	},
 }
 
-var cmdSessionCommit = &Command{
+var cmdSessionCommit = &cobra.Command{
 	Short: "commit session changes to environment image",
 	Long:  `Commit saves changes made in the session to the environment image.`,
 
-	Group: "session",
-	Name:  "commit",
-	Args:  []string{"[<environ>]"},
-	Run: func(context *RunContext) {
+	Use: "commit [<environ>]",
+	Run: func(cmd *cobra.Command, args []string) {
+		session := GetSession(os.Getenv("ENVY_USER"), os.Getenv("ENVY_SESSION"))
 		var environ *Environ
-		if context.Arg(0) != "" {
-			environ = GetEnviron(context.Session.User.Name, context.Arg(0))
+		if len(args) > 0 {
+			environ = GetEnviron(os.Getenv("ENVY_USER"), args[0])
 		} else {
-			environ = context.Session.Environ()
+			environ = session.Environ()
 		}
-		fmt.Fprintf(context.Stdout, "Committing to %s ...\n", environ.Name)
-		dockerCommit(context.Session.DockerName(), environ.DockerImage())
-		context.Exit(128)
+		log.Println(session.User.Name, "| committing session", session.Name, "to", environ.Name)
+		fmt.Fprintf(os.Stdout, "Committing to %s ...\n", environ.Name)
+		dockerCommit(session.DockerName(), environ.DockerImage())
+		os.Exit(128)
 	},
 }
 
-var cmdSessionSwitch = &Command{
+var cmdSessionSwitch = &cobra.Command{
 	Short: "switch session to different environment",
 	Long:  `Switch reloads session from a new environment image.`,
 
-	Group: "session",
-	Name:  "switch",
-	Args:  []string{"[<environ>]"},
-	Run: func(context *RunContext) {
-		if context.Arg(0) == "" {
+	Use: "switch <environ>",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
 			return
 		}
-		context.Session.SetEnviron(context.Arg(0))
-		context.Exit(128)
+		session := GetSession(os.Getenv("ENVY_USER"), os.Getenv("ENVY_SESSION"))
+		session.SetEnviron(args[0])
+		log.Println(session.User.Name, "| switching session", session.Name, "to", args[0])
+		os.Exit(128)
 	},
 }
 
@@ -83,11 +98,14 @@ func (s *Session) DockerName() string {
 	return s.Name
 }
 
-func (s *Session) Enter(context *RunContext, environ *Environ) int {
+func (s *Session) Enter(environ *Environ) int {
 	defer s.Cleanup()
-	fmt.Fprintln(context.Stdout, "Entering session...")
+	log.Println(s.User.Name, "| entering session", s.Name)
+	os.Setenv("ENVY_USER", s.User.Name)
+	os.Setenv("ENVY_SESSION", s.Name)
 	s.SetEnviron(environ.Name)
-	envySock := startEnvySock(s.Path("run/envy.sock"), s)
+	fmt.Fprintln(os.Stdout, "Entering session...")
+	envySock := startSessionServer(s.Path("run/envy.sock"))
 	defer envySock.Close()
 	for {
 		dockerRemove(s.Name)
@@ -118,7 +136,7 @@ func (s *Session) Enter(context *RunContext, environ *Environ) int {
 		if dockerShellCmd(environ.DockerImage()) != nil {
 			args = append(args, dockerShellCmd(environ.DockerImage())...)
 		}
-		status := context.Run(exec.Command("/bin/docker", args...))
+		status := run(exec.Command("/bin/docker", args...))
 		if status != 128 {
 			return status
 		}
@@ -126,14 +144,19 @@ func (s *Session) Enter(context *RunContext, environ *Environ) int {
 }
 
 func (s *Session) Cleanup() {
+	log.Println("Cleaning up")
 	dockerRemove(s.Name)
 	os.Remove(s.Path("run/envy.sock"))
 }
 
-func GetSession(user string) *Session {
+func NewSession(user string) *Session {
+	return GetSession(user, nextSessionName(GetUser(user)))
+}
+
+func GetSession(user, name string) *Session {
 	u := GetUser(user)
 	s := &Session{
-		Name: nextSessionName(u),
+		Name: name,
 		User: u,
 	}
 	mkdirAll(s.Path("run"))
@@ -150,5 +173,87 @@ func nextSessionName(user *User) string {
 			return s.Name
 		}
 		n += 1
+	}
+}
+
+func startSessionServer(path string) net.Listener {
+	os.Remove(path)
+	ln, err := net.Listen("unix", path)
+	assert(err)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				break
+			}
+			go handleSSHConn(conn)
+		}
+	}()
+	return ln
+}
+
+func handleSSHConn(conn net.Conn) {
+	defer conn.Close()
+	config := &ssh.ServerConfig{NoClientAuth: true}
+	privateBytes, err := ioutil.ReadFile(Envy.DataPath("id_host"))
+	assert(err)
+	private, err := ssh.ParsePrivateKey(privateBytes)
+	assert(err)
+	config.AddHostKey(private)
+	_, chans, reqs, err := ssh.NewServerConn(conn, config)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	go ssh.DiscardRequests(reqs)
+	for ch := range chans {
+		if ch.ChannelType() != "session" {
+			ch.Reject(ssh.UnknownChannelType, "unsupported channel type")
+			continue
+		}
+		go handleSSHChannel(ch)
+	}
+}
+
+func handleSSHChannel(newChan ssh.NewChannel) {
+	ch, reqs, err := newChan.Accept()
+	if err != nil {
+		log.Println("handle channel failed:", err)
+		return
+	}
+	for req := range reqs {
+		go func(req *ssh.Request) {
+			if req.WantReply {
+				req.Reply(true, nil)
+			}
+			switch req.Type {
+			case "exec":
+				defer ch.Close()
+				var payload = struct{ Value string }{}
+				ssh.Unmarshal(req.Payload, &payload)
+				line := strings.Trim(payload.Value, "\n")
+				var args []string
+				if line != "" {
+					args = strings.Split(line, " ")
+				}
+				cmd := exec.Command("/bin/envy", args...)
+				cmd.Stdout = ch
+				cmd.Stderr = ch.Stderr()
+				err := cmd.Run()
+				status := struct{ Status uint32 }{0}
+				if err != nil {
+					if exiterr, ok := err.(*exec.ExitError); ok {
+						if stat, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+							status = struct{ Status uint32 }{uint32(stat.ExitStatus())}
+						} else {
+							assert(err)
+						}
+					}
+				}
+				_, err = ch.SendRequest("exit-status", false, ssh.Marshal(&status))
+				assert(err)
+				return
+			}
+		}(req)
 	}
 }

@@ -7,8 +7,10 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/fsouza/go-dockerclient"
 	"github.com/termie/go-shutil"
@@ -17,6 +19,23 @@ import (
 var (
 	dockerEndpoint = "unix:///var/run/docker.sock"
 )
+
+func run(cmd *exec.Cmd) int {
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			if stat, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				return int(stat.ExitStatus())
+			} else {
+				assert(err)
+			}
+		}
+	}
+	return 0
+}
 
 func assert(err error) {
 	if err != nil {

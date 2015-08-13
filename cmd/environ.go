@@ -2,29 +2,39 @@ package envy
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 
 	"github.com/fsouza/go-dockerclient"
+	"github.com/spf13/cobra"
 )
 
 func init() {
-	commands = append(commands, cmdEnvironRebuild)
+	cmdEnviron.AddCommand(cmdEnvironRebuild)
+	Cmd.AddCommand(cmdEnviron)
 }
 
-var cmdEnvironRebuild = &Command{
+var cmdEnviron = &cobra.Command{
+	Use: "environ",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Usage()
+	},
+}
+
+var cmdEnvironRebuild = &cobra.Command{
 	Short: "rebuild environment image",
 	Long:  `Rebuild does a Docker build with your environment Dockerfile.`,
 
-	Group: "environ",
-	Name:  "rebuild",
-	Args:  []string{"[--force]"}, // TODO
-	Run: func(context *RunContext) {
-		environ := context.Session.Environ()
+	Use: "rebuild [--force]", // TODO
+	Run: func(_ *cobra.Command, args []string) {
+		session := GetSession(os.Getenv("ENVY_USER"), os.Getenv("ENVY_SESSION"))
+		environ := session.Environ()
+		log.Println(session.User.Name, "| rebuilding environ", environ.Name)
 		cmd := exec.Command("/bin/docker", "build", "-t", environ.DockerImage(), ".")
 		cmd.Dir = environ.Path()
-		context.Stdin = nil
-		context.Run(cmd)
-		context.Exit(128)
+		run(cmd)
+		os.Exit(128)
 	},
 }
 
@@ -56,6 +66,7 @@ func GetEnviron(user, name string) *Environ {
 	mkdirAll(e.Path("run"))
 	if !dockerRunning(e.DockerName()) {
 		dockerRemove(e.DockerName())
+		log.Println(user, "| starting dind for environ", e.Name)
 		dockerRunDetached(docker.CreateContainerOptions{
 			Name: e.DockerName(),
 			Config: &docker.Config{
@@ -73,6 +84,7 @@ func GetEnviron(user, name string) *Environ {
 		})
 	}
 	if !dockerImage(e.DockerImage()) {
+		log.Println(user, "| building environ", e.Name)
 		cmd := exec.Command("/bin/docker", "build", "-t", e.DockerImage(), ".")
 		cmd.Dir = e.Path()
 		assert(cmd.Run())

@@ -12,6 +12,7 @@ import (
 
 func init() {
 	cmdEnviron.AddCommand(cmdEnvironRebuild)
+	cmdEnviron.AddCommand(cmdEnvironList)
 	Cmd.AddCommand(cmdEnviron)
 }
 
@@ -35,6 +36,19 @@ var cmdEnvironRebuild = &cobra.Command{
 		cmd.Dir = environ.Path()
 		run(cmd)
 		os.Exit(128)
+	},
+}
+
+var cmdEnvironList = &cobra.Command{
+	Short: "list environments",
+	Long:  `Lists environments for this user.`,
+
+	Use: "ls",
+	Run: func(cmd *cobra.Command, args []string) {
+		session := GetSession(os.Getenv("ENVY_USER"), os.Getenv("ENVY_SESSION"))
+		for _, environ := range session.User.Environs() {
+			fmt.Println(environ)
+		}
 	},
 }
 

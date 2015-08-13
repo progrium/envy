@@ -55,6 +55,18 @@ func exists(path ...string) bool {
 	return true
 }
 
+func dirs(path string) []string {
+	var dirs []string
+	dir, err := ioutil.ReadDir(path)
+	assert(err)
+	for _, fi := range dir {
+		if fi.IsDir() {
+			dirs = append(dirs, fi.Name())
+		}
+	}
+	return dirs
+}
+
 func readFile(path string) string {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {

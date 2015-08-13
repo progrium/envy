@@ -29,6 +29,10 @@ func (u *User) Session(name string) *Session {
 	}
 }
 
+func (u *User) Environs() []string {
+	return dirs(u.Path("environs"))
+}
+
 func GetUser(name string) *User {
 	u := &User{
 		Name: name,

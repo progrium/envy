@@ -12,6 +12,7 @@ func main() {
 		return
 	}
 
+	envy.Envy.Setup()
 	envy.SetupLogging()
 	envy.CheckAdminCmd()
 	envy.CheckSystemCmd()

@@ -1,5 +1,5 @@
-FROM gliderlabs/alpine:3.2
-RUN apk --update add bash curl go git mercurial
+FROM gliderlabs/alpine:3.6
+RUN apk --update add bash curl go git mercurial musl-dev
 
 RUN curl -Ls https://github.com/progrium/execd/releases/download/v0.1.0/execd_0.1.0_Linux_x86_64.tgz \
     | tar -zxC /bin \
@@ -14,7 +14,7 @@ ADD ./data /tmp/data
 ENV GOPATH /go
 COPY . /go/src/github.com/progrium/envy
 WORKDIR /go/src/github.com/progrium/envy
-RUN go get && CGO_ENABLED=0 go build -a -installsuffix cgo -o /bin/envy \
+RUN go get && CGO_ENABLED=0 go build -a -buildmode exe -installsuffix cgo -o /bin/envy \
   && ln -s /bin/envy /bin/enter \
   && ln -s /bin/envy /bin/auth \
   && ln -s /bin/envy /bin/serve

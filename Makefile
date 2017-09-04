@@ -1,7 +1,7 @@
 
 build: hterm
 	docker build -t progrium/envy .
-	docker tag -f progrium/envy progrium/envy:local
+	docker tag progrium/envy progrium/envy:local
 
 dev:
 	docker build -t progrium/envy:dev -f Dockerfile .

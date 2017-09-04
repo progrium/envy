@@ -19,7 +19,7 @@ func ClientMode() bool {
 
 func RunClient(args []string) {
 	log.SetFlags(0)
-	client, err := ssh.Dial("unix", EnvySocket, new(ssh.ClientConfig))
+	client, err := ssh.Dial("unix", EnvySocket, &ssh.ClientConfig{HostKeyCallback: ssh.InsecureIgnoreHostKey()})
 	assert(err)
 	session, err := client.NewSession()
 	assert(err)
